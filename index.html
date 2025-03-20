@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Guide Tool</title>
+    <style>
+        body {
+            display: flex;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        #controlPanel {
+            width: 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #dropZone {
+            width: 100%;
+            height: 150px;
+            border: 2px dashed #ccc;
+            text-align: center;
+            line-height: 150px;
+            font-size: 16px;
+            color: #666;
+        }
+        #canvasContainer {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            border: 1px solid black;
+        }
+    </style>
+</head>
+<body>
+    <div id="controlPanel">
+        <h3>使い方</h3>
+        <p>画像をドラッグ＆ドロップするか、クリップボードから黒枠のエリアに貼り付けてください。</p>
+        
+        <div id="dropZone">ここに画像をドロップ</div>
+        
+        <label>縦の線の数: <input type="number" id="verticalLines" value="5" min="0"></label>
+        <label>横の線の数: <input type="number" id="horizontalLines" value="5" min="0"></label>
+        <label><input type="checkbox" id="lockAspectRatio"> 縦横の比率を固定</label>
+        <label>線の色: <input type="color" id="lineColor" value="#ff0000"></label>
+        <label><input type="checkbox" id="centerLine"> 中央線を表示</label>
+        <label><input type="checkbox" id="grayscale"> 白黒に変換</label>
+        <label><input type="checkbox" id="hideImage"> 画像を非表示</label>
+        <button id="printButton">印刷用に開く</button>
+    </div>
+    <div id="canvasContainer">
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <script>
+        const dropZone = document.getElementById("dropZone");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const verticalLinesInput = document.getElementById("verticalLines");
+        const horizontalLinesInput = document.getElementById("horizontalLines");
+        const lineColorInput = document.getElementById("lineColor");
+        const centerLineCheckbox = document.getElementById("centerLine");
+        const grayscaleCheckbox = document.getElementById("grayscale");
+        const hideImageCheckbox = document.getElementById("hideImage");
+        const printButton = document.getElementById("printButton");
+
+
+        let currentImage = new Image();
+        let originalImageData = null;
+
+        function drawGuides() {
+            const hideImage = document.getElementById("hideImage").checked;
+            if (document.getElementById('lockAspectRatio').checked) {
+                horizontalLinesInput.value = verticalLinesInput.value * (canvas.height / canvas.width);
+            }
+            if (!canvas.width || !canvas.height) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!hideImage) {
+            
+            if (grayscaleCheckbox.checked && originalImageData) {
+                const imageData = new ImageData(new Uint8ClampedArray(originalImageData.data), originalImageData.width, originalImageData.height);
+                const data = imageData.data;
+                for (let i = 0; i < data.length; i += 4) {
+                    const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    data[i] = data[i + 1] = data[i + 2] = avg;
+                }
+                ctx.putImageData(imageData, 0, 0);
+            } else {
+                ctx.drawImage(currentImage, 0, 0); }
+            }
+            
+            const vCount = parseInt(verticalLinesInput.value, 10) || 0;
+            const hCount = parseInt(horizontalLinesInput.value, 10) || 0;
+            const vSpacing = canvas.width / (vCount + 1);
+            const hSpacing = canvas.height / (hCount + 1);
+            
+            ctx.strokeStyle = grayscaleCheckbox.checked ? "#000000" : lineColorInput.value;
+            ctx.lineWidth = 1;
+
+            for (let i = 1; i <= vCount; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * vSpacing, 0);
+                ctx.lineTo(i * vSpacing, canvas.height);
+                ctx.stroke();
+            }
+            for (let i = 1; i <= hCount; i++) {
+                ctx.beginPath();
+                ctx.moveTo(0, i * hSpacing);
+                ctx.lineTo(canvas.width, i * hSpacing);
+                ctx.stroke();
+            }
+
+            if (centerLineCheckbox.checked) {
+                ctx.beginPath();
+                ctx.moveTo(canvas.width / 2, 0);
+                ctx.lineTo(canvas.width / 2, canvas.height);
+                ctx.stroke();
+                
+                ctx.beginPath();
+                ctx.moveTo(0, canvas.height / 2);
+                ctx.lineTo(canvas.width, canvas.height / 2);
+                ctx.stroke();
+            }
+        }
+
+        function loadImage(blob) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                currentImage.onload = () => {
+                    canvas.width = currentImage.width;
+                    canvas.height = currentImage.height;
+                    ctx.drawImage(currentImage, 0, 0);
+                    originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    drawGuides();
+                };
+                currentImage.src = e.target.result;
+            };
+            reader.readAsDataURL(blob);
+        }
+
+        dropZone.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            dropZone.style.backgroundColor = "#f0f0f0";
+        });
+
+        dropZone.addEventListener("dragleave", () => {
+            dropZone.style.backgroundColor = "";
+        });
+
+        dropZone.addEventListener("drop", (event) => {
+            event.preventDefault();
+            dropZone.style.backgroundColor = "";
+            loadImage(event.dataTransfer.files[0]);
+        });
+
+        document.addEventListener("paste", (event) => {
+            const items = event.clipboardData.items;
+            for (const item of items) {
+                if (item.type.startsWith("image/")) {
+                    loadImage(item.getAsFile());
+                }
+            }
+        });
+
+        verticalLinesInput.addEventListener("input", drawGuides);
+        horizontalLinesInput.addEventListener("input", drawGuides);
+        document.getElementById("lockAspectRatio").addEventListener("change", drawGuides);
+        horizontalLinesInput.addEventListener("input", drawGuides);
+        lineColorInput.addEventListener("input", drawGuides);
+        centerLineCheckbox.addEventListener("change", drawGuides);
+        grayscaleCheckbox.addEventListener("change", drawGuides);
+        hideImageCheckbox.addEventListener("change", drawGuides);
+
+        printButton.addEventListener("click", () => {
+            const newWindow = window.open("", "_blank");
+            newWindow.document.write('<img src="' + canvas.toDataURL() + '" style="width:100%;">');
+        });
+    </script>
+</body>
+</html>
